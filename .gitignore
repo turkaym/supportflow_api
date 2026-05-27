@@ -1,0 +1,19 @@
+# Build output
+target/
+
+# Maven wrapper downloaded distribution artifacts
+.mvn/wrapper/apache-maven-*
+
+# IDE files
+.idea/
+*.iml
+
+# Local SDD/agent metadata
+.atl/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
