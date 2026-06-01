@@ -7,12 +7,10 @@ import com.supportflow.api.user.Role;
 import com.supportflow.api.user.User;
 import com.supportflow.api.user.UserRepository;
 import java.util.Locale;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,17 +23,19 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final JwtService jwtService;
-    private final ObjectProvider<AuthenticationManager> authenticationManagerProvider;
-    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final AuthenticationManager authenticationManager;
+    private final PasswordEncoder passwordEncoder;
 
     public AuthService(
             UserRepository userRepository,
             JwtService jwtService,
-            ObjectProvider<AuthenticationManager> authenticationManagerProvider
+            AuthenticationManager authenticationManager,
+            PasswordEncoder passwordEncoder
     ) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
-        this.authenticationManagerProvider = authenticationManagerProvider;
+        this.authenticationManager = authenticationManager;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional
@@ -53,11 +53,6 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         String email = normalizeEmail(request.email());
-        AuthenticationManager authenticationManager = authenticationManagerProvider.getIfAvailable();
-        if (authenticationManager == null) {
-            throw unauthorized();
-        }
-
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, request.password()));
         } catch (AuthenticationException ex) {

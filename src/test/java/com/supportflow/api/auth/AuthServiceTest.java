@@ -16,11 +16,12 @@ import com.supportflow.api.user.UserRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
 class AuthServiceTest {
@@ -28,9 +29,8 @@ class AuthServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final JwtService jwtService = mock(JwtService.class);
     private final AuthenticationManager authenticationManager = mock(AuthenticationManager.class);
-    @SuppressWarnings("unchecked")
-    private final ObjectProvider<AuthenticationManager> authenticationManagerProvider = mock(ObjectProvider.class);
-    private final AuthService authService = new AuthService(userRepository, jwtService, authenticationManagerProvider);
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final AuthService authService = new AuthService(userRepository, jwtService, authenticationManager, passwordEncoder);
 
     @Test
     void registerNormalizesEmailHashesPasswordAndReturnsSafeResponse() {
@@ -67,7 +67,6 @@ class AuthServiceTest {
     @Test
     void loginAuthenticatesAndReturnsToken() {
         User user = new User("person@example.com", "$2a$10$hash", Role.USER);
-        when(authenticationManagerProvider.getIfAvailable()).thenReturn(authenticationManager);
         when(userRepository.findByEmail("person@example.com")).thenReturn(Optional.of(user));
         when(jwtService.generateToken("person@example.com")).thenReturn("jwt-token");
         when(jwtService.getExpirationMillis()).thenReturn(3_600_000L);
@@ -81,7 +80,6 @@ class AuthServiceTest {
 
     @Test
     void loginRejectsInvalidCredentialsWithGenericUnauthorized() {
-        when(authenticationManagerProvider.getIfAvailable()).thenReturn(authenticationManager);
         when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("person@example.com", "wrong-password")))
