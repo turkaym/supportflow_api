@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,7 @@ class AuthServiceTest {
         assertThat(savedUser.getRole()).isEqualTo(Role.USER);
         assertThat(savedUser.getPasswordHash()).isNotEqualTo("Secret123!");
         assertThat(savedUser.getPasswordHash()).startsWith("$2");
+        assertThat(passwordEncoder.matches("Secret123!", savedUser.getPasswordHash())).isTrue();
         assertThat(response.email()).isEqualTo("person@example.com");
         assertThat(response.accessToken()).isEqualTo("jwt-token");
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -62,6 +64,7 @@ class AuthServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting("statusCode")
                 .isEqualTo(HttpStatus.CONFLICT);
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
@@ -89,5 +92,6 @@ class AuthServiceTest {
                     assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
                     assertThat(exception.getReason()).isEqualTo("Invalid email or password");
                 });
+        verify(jwtService, never()).generateToken(any());
     }
 }

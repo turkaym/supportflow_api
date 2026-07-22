@@ -1,5 +1,6 @@
 package com.supportflow.api.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,10 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest(properties = {
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration",
@@ -81,6 +84,30 @@ class AuthSecurityIntegrationTest {
                 .andExpect(jsonPath("$.accessToken").value("jwt-token"))
                 .andExpect(jsonPath("$.password").doesNotExist())
                 .andExpect(jsonPath("$.passwordHash").doesNotExist());
+    }
+
+    @Test
+    void invalidLoginReturnsGenericResponseWithoutCredentialDisclosure() throws Exception {
+        when(authService.login(any())).thenThrow(new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "Account exists: person@example.com; password=Secret123!; passwordHash=$2a$hash; "
+                        + "accessToken=leaked-token; JWT secret=web-secret; credentials=leaked"
+        ));
+
+        String responseBody = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"person@example.com\",\"password\":\"Secret123!\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Unauthorized"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(responseBody).doesNotContain("person@example.com", "Secret123!", "web-secret");
+        assertThat(responseBody.toLowerCase()).doesNotContain(
+                "account exists", "password", "passwordhash", "hash",
+                "accesstoken", "token", "jwt secret", "credential"
+        );
     }
 
     @Test
