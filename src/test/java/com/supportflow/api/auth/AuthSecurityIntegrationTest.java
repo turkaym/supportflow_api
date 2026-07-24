@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.supportflow.api.auth.dto.AuthResponse;
+import com.supportflow.api.ticket.TicketRepository;
 import com.supportflow.api.user.Role;
 import com.supportflow.api.user.User;
 import com.supportflow.api.user.UserRepository;
@@ -48,6 +49,9 @@ class AuthSecurityIntegrationTest {
 
     @MockBean
     private UserRepository userRepository;
+
+    @MockBean
+    private TicketRepository ticketRepository;
 
     @Test
     void publicAuthEndpointsAreAccessibleWithoutBearerToken() throws Exception {
