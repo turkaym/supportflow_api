@@ -3,10 +3,12 @@ package com.supportflow.api.ticket;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.supportflow.api.user.Role;
@@ -268,6 +270,64 @@ class TicketServiceTest {
         assertThat(first.id()).isNotEqualTo(second.id());
     }
 
+    @Test
+    void retrievesOwnedTicketByIdAndEmailWithoutRequesterOrWriteInteractions() {
+        UUID id = UUID.randomUUID();
+        Ticket ticket = mock(Ticket.class);
+        when(ticket.getId()).thenReturn(id);
+        when(ticket.getTitle()).thenReturn("Title");
+        when(ticket.getDescription()).thenReturn("Description");
+        when(ticket.getStatus()).thenReturn(TicketStatus.OPEN);
+        when(ticket.getPriority()).thenReturn(TicketPriority.MEDIUM);
+        when(ticketRepository.findByIdAndRequester_Email(id, REQUESTER_EMAIL)).thenReturn(Optional.of(ticket));
+
+        TicketResponse response = ticketService.getById(id, authentication);
+
+        assertThat(response).isEqualTo(new TicketResponse(
+                id, "Title", "Description", TicketStatus.OPEN, TicketPriority.MEDIUM, null, null));
+        verify(ticketRepository).findByIdAndRequester_Email(id, REQUESTER_EMAIL);
+        verifyNoMoreInteractions(ticketRepository);
+        verifyNoInteractions(userRepository);
+        verify(ticket, never()).getRequester();
+        verify(ticket, never()).getIdempotencyKey();
+    }
+
+    @Test
+    void returnsIdenticalGenericNotFoundForAbsentAndForeignEquivalentTickets() {
+        UUID absentId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        when(ticketRepository.findByIdAndRequester_Email(any(), any())).thenReturn(Optional.empty());
+
+        ResponseStatusException absent = captureNotFound(absentId);
+        ResponseStatusException foreign = captureNotFound(foreignId);
+
+        assertThat(foreign.getStatusCode()).isEqualTo(absent.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(foreign.getReason()).isEqualTo(absent.getReason()).isEqualTo("Ticket not found");
+        verify(ticketRepository).findByIdAndRequester_Email(absentId, REQUESTER_EMAIL);
+        verify(ticketRepository).findByIdAndRequester_Email(foreignId, REQUESTER_EMAIL);
+        verifyNoMoreInteractions(ticketRepository);
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void rejectsInvalidAuthenticationBeforeRepositoryAccess() {
+        Authentication unauthenticated = mock(Authentication.class);
+        Authentication missingName = mock(Authentication.class);
+        Authentication blankName = mock(Authentication.class);
+        when(missingName.isAuthenticated()).thenReturn(true);
+        when(blankName.isAuthenticated()).thenReturn(true);
+        when(blankName.getName()).thenReturn(" ");
+
+        for (Authentication invalid : new Authentication[]{null, unauthenticated, missingName, blankName}) {
+            assertThatThrownBy(() -> ticketService.getById(UUID.randomUUID(), invalid))
+                    .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                        assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                        assertThat(exception.getReason()).isEqualTo("Unauthorized");
+                    });
+        }
+        verifyNoInteractions(ticketRepository, userRepository);
+    }
+
     private void assertInvalidWithoutSideEffects(CreateTicketRequest request) {
         assertThatThrownBy(() -> ticketService.create(request, authentication, IDEMPOTENCY_KEY))
                 .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
@@ -277,6 +337,15 @@ class TicketServiceTest {
 
     private CreateTicketRequest validRequest() {
         return new CreateTicketRequest("Title", "Description", TicketPriority.MEDIUM);
+    }
+
+    private ResponseStatusException captureNotFound(UUID id) {
+        try {
+            ticketService.getById(id, authentication);
+            throw new AssertionError("Expected ticket lookup to fail");
+        } catch (ResponseStatusException exception) {
+            return exception;
+        }
     }
 
     private void persistTicketOnSave() {

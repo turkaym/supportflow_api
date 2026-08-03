@@ -9,6 +9,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
@@ -21,7 +22,8 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         String message = safeMessage(status, exception.getReason());
-        return ResponseEntity.status(status).body(ErrorResponse.of(status, message, request.getRequestURI()));
+        String path = status == HttpStatus.NOT_FOUND ? null : request.getRequestURI();
+        return ResponseEntity.status(status).body(ErrorResponse.of(status, message, path));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -44,6 +46,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolation(
             ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        ErrorResponse response = ErrorResponse.of(HttpStatus.BAD_REQUEST, "Validation failed", request.getRequestURI());
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleArgumentTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
         ErrorResponse response = ErrorResponse.of(HttpStatus.BAD_REQUEST, "Validation failed", request.getRequestURI());

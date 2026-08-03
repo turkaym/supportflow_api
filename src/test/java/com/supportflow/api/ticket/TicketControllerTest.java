@@ -1,12 +1,16 @@
 package com.supportflow.api.ticket;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -310,5 +314,75 @@ class TicketControllerTest {
         }
 
         verifyNoInteractions(userRepository, ticketRepository);
+    }
+
+    @Test
+    void ownerRetrievalReturnsOnlySevenSafeFieldsAndIgnoresIdempotencyHeader() throws Exception {
+        UUID id = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-07-23T12:00:00Z");
+        TicketResponse response = new TicketResponse(id, "Title", "Description", TicketStatus.OPEN,
+                TicketPriority.HIGH, createdAt, createdAt);
+        when(ticketService.getById(any(), any())).thenReturn(response);
+
+        String withoutHeader = mockMvc.perform(get("/api/tickets/{id}", id)
+                        .with(user("person@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.*", hasSize(7)))
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.title").value("Title"))
+                .andExpect(jsonPath("$.description").value("Description"))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.createdAt").value(createdAt.toString()))
+                .andExpect(jsonPath("$.updatedAt").value(createdAt.toString()))
+                .andReturn().getResponse().getContentAsString();
+        String withHeader = mockMvc.perform(get("/api/tickets/{id}", id)
+                        .with(user("person@example.com"))
+                        .header("Idempotency-Key", "ignored-on-retrieval"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(withHeader).isEqualTo(withoutHeader);
+        verify(ticketService, times(2)).getById(
+                argThat(id::equals), argThat(auth -> auth.getName().equals("person@example.com")));
+        verifyNoMoreInteractions(ticketService);
+    }
+
+    @Test
+    void absentAndForeignTicketsReturnIdenticalGeneric404() throws Exception {
+        UUID absentId = UUID.randomUUID();
+        UUID foreignId = UUID.randomUUID();
+        when(ticketService.getById(any(), any())).thenThrow(
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
+
+        String absent = mockMvc.perform(get("/api/tickets/{id}", absentId).with(user("person@example.com")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Ticket not found"))
+                .andReturn().getResponse().getContentAsString();
+        String foreign = mockMvc.perform(get("/api/tickets/{id}", foreignId).with(user("person@example.com")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Ticket not found"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(foreign).isEqualTo(absent);
+    }
+
+    @Test
+    void unauthenticatedRetrievalReturnsGeneric401WithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/tickets/{id}", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
+
+        verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void malformedUuidReturnsSafe400WithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/tickets/not-a-uuid").with(user("person@example.com")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.path").value("/api/tickets/not-a-uuid"));
+
+        verifyNoInteractions(ticketService);
     }
 }

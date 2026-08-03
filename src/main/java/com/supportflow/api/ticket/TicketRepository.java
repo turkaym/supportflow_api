@@ -13,4 +13,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                            @Param("idempotencyKey") String idempotencyKey);
 
     Optional<Ticket> findByRequester_IdAndIdempotencyKey(UUID requesterId, String idempotencyKey);
+
+    Optional<Ticket> findByIdAndRequester_Email(UUID id, String email);
 }
